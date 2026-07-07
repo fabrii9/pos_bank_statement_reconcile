@@ -75,6 +75,7 @@
                                     <field name="amount_matched" readonly="1" optional="show"/>
                                     <field name="amount_residual" readonly="1" optional="show"/>
                                     <field name="statement_line_count" string="Líneas extracto" readonly="1" optional="show"/>
+                                    <field name="reconciled_statement_line_count" string="Ya reconc." readonly="1" optional="show"/>
                                     <field name="pos_payment_matched_count" string="Match" readonly="1" optional="show"/>
                                     <field name="pos_payment_count" string="Total POS" readonly="1" optional="show"/>
                                     <field name="pos_payment_missing_ids" string="Faltan" widget="form.many2many_tags" readonly="1" optional="show" options="{'edit_tags': True, 'no_create': True, 'no_quick_create': True, 'no_create_edit': True}"/>

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Conciliación Bancaria POS',
-    'version': '18.0.1.0.0',
+    'version': '18.0.1.1.0',
     'category': 'Accounting/Accounting',
     'summary': 'Concilia extractos bancarios con pagos POS agrupados por sesión',
     'description': """
@@ -21,7 +21,12 @@ Características principales:
 * Motor de emparejamiento por monto con tolerancia (subset-sum) que detecta
   combinaciones de pagos POS que suman el monto de una línea de extracto.
 * Wizard de previsualización y confirmación con estados:
-  `matched`, `partial`, `ambiguous`, `unmatched`.
+  `matched`, `partial`, `ambiguous`, `unmatched`, `reconciled`.
+* Reconocimiento de conciliaciones parciales previas: detecta líneas de extracto
+  ya reconciliadas con el recibo y permite continuar conciliando el saldo
+  residual sin desconciliar lo ya registrado.
+* Bloqueo preventivo: solo se confirman líneas en estado `matched`, evitando
+  que una conciliación parcial deje el pago con saldo pendiente.
 * Documentación persistente de cada ejecución de conciliación.
 * Reporte de líneas sin match y pagos POS no conciliados.
 

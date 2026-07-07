@@ -25,6 +25,14 @@ class PosBankReconcileLine(models.Model):
         string='Líneas extracto',
         compute='_compute_counts',
     )
+    reconciled_statement_line_ids = fields.Many2many(
+        comodel_name='account.bank.statement.line',
+        string='Líneas de extracto ya reconciliadas',
+    )
+    reconciled_statement_line_count = fields.Integer(
+        string='Líneas extracto ya reconciliadas',
+        compute='_compute_counts',
+    )
     payment_id = fields.Many2one(
         comodel_name='account.payment',
         string='Pago POS agrupado',
@@ -114,6 +122,7 @@ class PosBankReconcileLine(models.Model):
         for line in self:
             line.pos_payment_count = len(line.pos_payment_ids)
             line.statement_line_count = len(line.statement_line_ids)
+            line.reconciled_statement_line_count = len(line.reconciled_statement_line_ids)
 
             matched = line.env['pos.payment']
             missing = line.env['pos.payment']
@@ -122,7 +131,7 @@ class PosBankReconcileLine(models.Model):
 
             for detail in line.match_detail_ids:
                 pos_payment = detail.pos_payment_id
-                if detail.state in ('matched', 'manual'):
+                if detail.state in ('matched', 'manual', 'already_reconciled'):
                     matched |= pos_payment
                 elif detail.state == 'ambiguous':
                     ambiguous |= pos_payment
@@ -136,7 +145,7 @@ class PosBankReconcileLine(models.Model):
                 tolerance = line.session_id.tolerance or 0.01
                 statement_amounts = [
                     currency.round(abs(sl.amount))
-                    for sl in line.statement_line_ids
+                    for sl in line.statement_line_ids | line.reconciled_statement_line_ids
                 ]
                 for pos_payment in line.pos_payment_ids:
                     pos_amount = currency.round(abs(pos_payment.amount))
@@ -161,13 +170,17 @@ class PosBankReconcileLine(models.Model):
             currency = line.currency_id
             tolerance = line.session_id.tolerance or 0.01
             selected_lines = line.env['account.bank.statement.line']
+            reconciled_lines = line.env['account.bank.statement.line']
             amount_matched = 0.0
             has_missing = False
             has_ambiguous = False
             missing_amounts_list = []
 
             for detail in line.match_detail_ids:
-                if detail.state in ('matched', 'manual') and detail.selected_statement_line_id:
+                if detail.state == 'already_reconciled' and detail.selected_statement_line_id:
+                    reconciled_lines |= detail.selected_statement_line_id
+                    amount_matched += currency.round(abs(detail.selected_statement_line_id.amount))
+                elif detail.state in ('matched', 'manual') and detail.selected_statement_line_id:
                     selected_lines |= detail.selected_statement_line_id
                     amount_matched += currency.round(abs(detail.selected_statement_line_id.amount))
                 elif detail.state == 'ambiguous':
@@ -182,7 +195,7 @@ class PosBankReconcileLine(models.Model):
             if has_ambiguous:
                 state = 'ambiguous'
                 notes = _('Hay pagos POS individuales con múltiples candidatos. Seleccioná la contraparte en el detalle de matches.')
-            elif has_missing and not selected_lines:
+            elif has_missing and not selected_lines and not reconciled_lines:
                 state = 'unmatched'
                 notes = _('No se encontró contraparte para ningún pago individual.')
             elif has_missing:
@@ -200,6 +213,7 @@ class PosBankReconcileLine(models.Model):
 
             line.write({
                 'statement_line_ids': [(6, 0, selected_lines.ids)],
+                'reconciled_statement_line_ids': [(6, 0, reconciled_lines.ids)],
                 'amount_matched': amount_matched if line.amount_payment >= 0 else -amount_matched,
                 'amount_residual': residual if line.amount_payment >= 0 else -residual,
                 'state': state,
@@ -224,6 +238,7 @@ class PosBankReconcileLine(models.Model):
             )
             line.write({
                 'statement_line_ids': [(6, 0, result['statement_line_ids'])],
+                'reconciled_statement_line_ids': [(6, 0, result['reconciled_statement_line_ids'])],
                 'amount_matched': result['amount_matched'],
                 'amount_residual': result['amount_residual'],
                 'state': result['state'],

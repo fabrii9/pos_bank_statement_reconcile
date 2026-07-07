@@ -50,6 +50,7 @@ class PosBankReconcileLineMatch(models.Model):
     state = fields.Selection(
         selection=[
             ('matched', 'Emparejado'),
+            ('already_reconciled', 'Ya conciliado'),
             ('ambiguous', 'Ambiguo'),
             ('missing', 'Sin match'),
             ('manual', 'Manual'),

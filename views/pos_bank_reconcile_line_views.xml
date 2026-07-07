@@ -13,6 +13,7 @@
                 <field name="amount_matched"/>
                 <field name="amount_residual"/>
                 <field name="statement_line_count"/>
+                <field name="reconciled_statement_line_count"/>
                 <field name="pos_payment_matched_count"/>
                 <field name="pos_payment_count"/>
                 <field name="missing_amounts"/>
@@ -41,6 +42,7 @@
                             <field name="pos_payment_count" readonly="1"/>
                             <field name="pos_payment_matched_count" readonly="1"/>
                             <field name="statement_line_count" readonly="1"/>
+                            <field name="reconciled_statement_line_count" readonly="1"/>
                             <field name="missing_amounts" readonly="1"/>
                         </group>
                         <group>
@@ -80,7 +82,7 @@
                                     <field name="pos_payment_id" readonly="1" options="{'no_open': True}"/>
                                     <field name="payment_date" readonly="1"/>
                                     <field name="payment_amount" readonly="1"/>
-                                    <field name="state" readonly="1" widget="badge" decoration-success="state == 'matched'" decoration-warning="state == 'ambiguous'" decoration-danger="state == 'missing'" decoration-info="state == 'manual'"/>
+                                    <field name="state" readonly="1" widget="badge" decoration-success="state == 'matched'" decoration-warning="state == 'ambiguous' or state == 'already_reconciled'" decoration-danger="state == 'missing'" decoration-info="state == 'manual'"/>
                                     <field name="candidate_statement_line_ids" widget="many2many_tags" readonly="1" options="{'no_open': True}"/>
                                     <field name="selected_statement_line_id" options="{'no_open': True}" domain="[('id', 'in', candidate_statement_line_ids)]"/>
                                     <field name="notes" readonly="1"/>
@@ -90,6 +92,17 @@
                         <page string="Líneas de extracto asignadas">
                             <field name="statement_line_ids" readonly="1">
                                 <list string="Líneas de extracto">
+                                    <field name="date"/>
+                                    <field name="amount"/>
+                                    <field name="payment_ref"/>
+                                    <field name="ref"/>
+                                    <field name="partner_id"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Líneas de extracto ya reconciliadas" invisible="not reconciled_statement_line_ids">
+                            <field name="reconciled_statement_line_ids" readonly="1">
+                                <list string="Líneas de extracto ya reconciliadas">
                                     <field name="date"/>
                                     <field name="amount"/>
                                     <field name="payment_ref"/>

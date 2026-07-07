@@ -257,6 +257,7 @@ class PosBankReconcileSession(models.Model):
                 'pos_payment_method_id': payment.pos_payment_method_id.id if payment.pos_payment_method_id else False,
                 'pos_payment_ids': [(6, 0, payment.pos_payment_ids.ids)],
                 'statement_line_ids': [(6, 0, result['statement_line_ids'])],
+                'reconciled_statement_line_ids': [(6, 0, result['reconciled_statement_line_ids'])],
                 'amount_payment': result['amount_payment'],
                 'amount_matched': result['amount_matched'],
                 'amount_residual': result['amount_residual'],
@@ -378,6 +379,10 @@ class PosBankReconcileSession(models.Model):
         **todos** sus pagos POS individuales encontraron una línea de extracto con el
         mismo monto dentro de la tolerancia configurada.
 
+        Se reconocen las líneas de extracto que ya fueron reconciliadas con este pago
+        en sesiones anteriores, de modo que se pueda continuar la conciliación del
+        saldo residual sin desconciliar lo ya registrado.
+
         El resultado incluye un listado de match_details para que el usuario pueda
         revisar y corregir asignaciones ambiguas manualmente.
         """
@@ -386,6 +391,7 @@ class PosBankReconcileSession(models.Model):
             return {
                 'selected': False,
                 'statement_line_ids': [],
+                'reconciled_statement_line_ids': [],
                 'amount_payment': payment.amount,
                 'amount_matched': 0.0,
                 'amount_residual': payment.amount,
@@ -398,18 +404,77 @@ class PosBankReconcileSession(models.Model):
         target_total = currency.round(abs(payment.amount))
         available = statement_lines.filtered(lambda l: l.id not in used_statement_line_ids)
 
-        assignments = self._resolve_assignment(pos_payments, available, currency)
+        # ------------------------------------------------------------------
+        # 1. Detectar líneas de extracto ya reconciliadas con este pago
+        # ------------------------------------------------------------------
+        already_reconciled_st_lines = payment.reconciled_statement_line_ids
+        amount_already_reconciled = 0.0
+        reconciled_line_ids = []
+        already_covered_payment_ids = set()
+
+        # Mapeo de montos ya reconciliados para ir consumiéndolos de forma determinística
+        reconciled_amounts = []
+        for st_line in already_reconciled_st_lines:
+            st_amount = currency.round(abs(st_line.amount))
+            if st_amount:
+                reconciled_amounts.append(st_amount)
+            reconciled_line_ids.append(st_line.id)
+
+        # Orden determinístico: primero los pagos más antiguos
+        sorted_pos_payments = pos_payments.sorted(lambda p: p.id)
+        for pos_payment in sorted_pos_payments:
+            pos_amount = currency.round(abs(pos_payment.amount))
+            for idx, rec_amount in enumerate(reconciled_amounts):
+                if rec_amount and abs(rec_amount - pos_amount) <= self.tolerance:
+                    already_covered_payment_ids.add(pos_payment.id)
+                    amount_already_reconciled += pos_amount
+                    reconciled_amounts[idx] = 0.0
+                    break
+
+        amount_already_reconciled = currency.round(amount_already_reconciled)
+        reconciled_line_ids = list(dict.fromkeys(reconciled_line_ids))
+
+        # ------------------------------------------------------------------
+        # 2. Buscar matches solo para los pagos individuales no cubiertos
+        # ------------------------------------------------------------------
+        pending_pos_payments = pos_payments.filtered(
+            lambda p: p.id not in already_covered_payment_ids
+        )
+
+        assignments = {}
+        if pending_pos_payments:
+            assignments = self._resolve_assignment(pending_pos_payments, available, currency)
 
         matched_line_ids = []
         match_details = []
-        amount_matched = 0.0
+        amount_matched = amount_already_reconciled
         missing_payments = []
         ambiguous_payments = []
 
-        for pos_payment in pos_payments:
+        for pos_payment in sorted_pos_payments:
+            # Pago individual ya conciliado en una sesión anterior
+            if pos_payment.id in already_covered_payment_ids:
+                selected_st_line = False
+                pos_amount = currency.round(abs(pos_payment.amount))
+                for st_line in already_reconciled_st_lines:
+                    st_amount = currency.round(abs(st_line.amount))
+                    if abs(st_amount - pos_amount) <= self.tolerance:
+                        selected_st_line = st_line
+                        break
+                match_details.append({
+                    'pos_payment_id': pos_payment.id,
+                    'selected_statement_line_id': selected_st_line.id if selected_st_line else False,
+                    'candidate_statement_line_ids': [],
+                    'state': 'already_reconciled',
+                    'notes': _('Este pago ya fue conciliado con una línea de extracto en una sesión anterior.'),
+                })
+                continue
+
             pos_amount = currency.round(abs(pos_payment.amount))
             candidates = self._get_candidates_for_pos_payment(pos_payment, available, currency)
-            free_candidates = candidates.filtered(lambda l: l.id not in matched_line_ids)
+            free_candidates = candidates.filtered(
+                lambda l: l.id not in matched_line_ids and l.id not in reconciled_line_ids
+            )
 
             if pos_payment.id in assignments and assignments[pos_payment.id] not in matched_line_ids:
                 line_id = assignments[pos_payment.id]
@@ -461,7 +526,7 @@ class PosBankReconcileSession(models.Model):
                 if not detail:
                     continue
                 for cid in detail['candidate_statement_line_ids']:
-                    if cid in matched_line_ids or cid in auto_resolved_ids:
+                    if cid in matched_line_ids or cid in auto_resolved_ids or cid in reconciled_line_ids:
                         continue
                     line = available.filtered(lambda l: l.id == cid)
                     if line:
@@ -487,7 +552,18 @@ class PosBankReconcileSession(models.Model):
             currency.format(currency.round(abs(pp.amount))) for pp in missing_payments
         )
 
-        if missing_payments and not matched_line_ids:
+        already_reconciled_count = len(already_covered_payment_ids)
+
+        if already_reconciled_count and not matched_line_ids and not missing_payments and not ambiguous_payments:
+            state = 'matched' if residual == 0 else 'partial'
+            notes = _('El recibo ya tiene %s pago(s) conciliado(s) en sesiones anteriores por un total de %s.') % (
+                already_reconciled_count, currency.format(amount_already_reconciled)
+            )
+            if residual != 0:
+                notes += ' ' + _('Falta conciliar %s.') % currency.format(residual)
+            else:
+                notes += ' ' + _('No queda saldo pendiente.')
+        elif missing_payments and not matched_line_ids and not already_reconciled_count:
             state = 'unmatched'
             notes = _('No se encontró contraparte para ningún pago individual (%s pagos). Faltan montos: %s') % (
                 len(pos_payments), missing_amounts_str
@@ -497,6 +573,8 @@ class PosBankReconcileSession(models.Model):
             notes = _('Faltan %s de %s pagos individuales por emparejar. Montos pendientes: %s') % (
                 len(missing_payments), len(pos_payments), missing_amounts_str
             )
+            if already_reconciled_count:
+                notes += ' ' + _('(Ya conciliados previamente: %s)') % currency.format(amount_already_reconciled)
         elif ambiguous_payments:
             state = 'ambiguous'
             notes = _('Hay %s pago(s) individual(es) con múltiples contrapartes posibles en el extracto.') % (
@@ -512,9 +590,13 @@ class PosBankReconcileSession(models.Model):
             state = 'partial'
             notes = _('Diferencia no explicada de %s a pesar de emparejar todos los pagos.') % residual
 
+        # Solo se preselecciona para confirmar si hay líneas de extracto nuevas
+        # por reconciliar en esta sesión. Las líneas completamente reconciliadas
+        # previamente no deben generar un intento de confirmación vacío.
         return {
-            'selected': state == 'matched',
+            'selected': state == 'matched' and bool(matched_line_ids),
             'statement_line_ids': matched_line_ids,
+            'reconciled_statement_line_ids': reconciled_line_ids,
             'amount_payment': payment.amount,
             'amount_matched': amount_matched_signed,
             'amount_residual': residual_signed,
@@ -528,9 +610,9 @@ class PosBankReconcileSession(models.Model):
             if session.state not in ('draft', 'preview'):
                 raise UserError(_('Solo se pueden confirmar sesiones en borrador o previsualización.'))
 
-            selected_lines = session.line_ids.filtered(lambda l: l.selected and l.state in ('matched', 'partial'))
+            selected_lines = session.line_ids.filtered(lambda l: l.selected and l.state == 'matched')
             if not selected_lines:
-                raise UserError(_('No hay líneas seleccionadas para conciliar.'))
+                raise UserError(_('No hay líneas seleccionadas para conciliar. Solo se pueden confirmar líneas en estado "Con contraparte" (matched).'))
 
             errors = []
             for line in selected_lines:
@@ -554,11 +636,19 @@ class PosBankReconcileSession(models.Model):
     def _reconcile_line(self, line):
         """Ejecuta la conciliación contable para un pago agrupado."""
         payment = line.payment_id
-        st_lines = line.statement_line_ids
+        # Solo reconciliar líneas de extracto que aún no estén reconciliadas.
+        # Las líneas ya reconciliadas en sesiones anteriores se mantienen intactas.
+        st_lines = line.statement_line_ids.filtered(lambda l: not l.is_reconciled)
         pos_payments = line.pos_payment_ids
 
-        if not payment or not st_lines:
+        if not payment:
             raise UserError(_('Faltan datos para conciliar el pago.'))
+
+        if not st_lines:
+            raise UserError(_(
+                'Todas las líneas de extracto asignadas al recibo %s ya están reconciliadas. '
+                'No queda saldo pendiente por conciliar en esta sesión.'
+            ) % payment.display_name)
 
         if payment.is_matched:
             raise UserError(_(
