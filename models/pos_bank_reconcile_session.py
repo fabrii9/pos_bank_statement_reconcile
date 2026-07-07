@@ -464,23 +464,20 @@ class PosBankReconcileSession(models.Model):
         # ------------------------------------------------------------------
         # 1. Detectar líneas de extracto ya reconciliadas con este pago
         # ------------------------------------------------------------------
-        # Primero intentamos con el campo nativo; si no está poblado (porque
-        # la conciliación se hizo directamente sobre move.lines), buscamos a
-        # través de las reconciliaciones contables existentes.
-        already_reconciled_st_lines = payment.reconciled_statement_line_ids
-        if already_reconciled_st_lines:
-            reconciled_amounts = [
-                currency.round(abs(st_line.amount))
-                for st_line in already_reconciled_st_lines
-                if currency.round(abs(st_line.amount))
-            ]
-        else:
-            already_reconciled_st_lines, reconciled_amounts = self._get_already_reconciled_statement_lines(
-                payment, currency
-            )
+        # Usamos la fuente contable de verdad: reconciliaciones parciales y
+        # totales de las líneas del pago en la cuenta outstanding/destino.
+        # El campo nativo payment.reconciled_statement_line_ids puede no estar
+        # poblado o estar incompleto cuando la conciliación se hizo directamente
+        # sobre account.move.line.
+        already_reconciled_st_lines, reconciled_amounts = self._get_already_reconciled_statement_lines(
+            payment, currency
+        )
 
-        amount_already_reconciled = 0.0
-        reconciled_line_ids = []
+        # El monto ya conciliado es la suma real de las líneas de extracto
+        # reconciliadas con el pago, aunque no encontremos un pos.payment
+        # individual que explique cada una (puede haber ajustes/comisiones).
+        amount_already_reconciled = currency.round(sum(reconciled_amounts))
+        reconciled_line_ids = list(dict.fromkeys(already_reconciled_st_lines.ids))
         already_covered_payment_ids = set()
 
         # Orden determinístico: primero los pagos más antiguos
@@ -491,12 +488,8 @@ class PosBankReconcileSession(models.Model):
             for idx, rec_amount in enumerate(remaining_amounts):
                 if rec_amount and abs(rec_amount - pos_amount) <= self.tolerance:
                     already_covered_payment_ids.add(pos_payment.id)
-                    amount_already_reconciled += pos_amount
                     remaining_amounts[idx] = 0.0
                     break
-
-        amount_already_reconciled = currency.round(amount_already_reconciled)
-        reconciled_line_ids = list(dict.fromkeys(already_reconciled_st_lines.ids))
 
         # ------------------------------------------------------------------
         # 2. Buscar matches solo para los pagos individuales no cubiertos
