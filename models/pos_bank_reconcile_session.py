@@ -372,6 +372,63 @@ class PosBankReconcileSession(models.Model):
 
         return assignments
 
+    def _get_already_reconciled_statement_lines(self, payment, currency):
+        """Busca líneas de extracto ya reconciliadas con el pago a nivel contable.
+
+        Algunas conciliaciones previas se realizaron directamente sobre
+        account.move.line sin poblar payment.reconciled_statement_line_ids.
+        Esta función detecta esos casos a través de account.partial.reconcile
+        y account.full.reconcile.
+
+        Devuelve un recordset con las líneas de extracto y una lista de montos
+        (valor absoluto) de esas líneas.
+        """
+        statement_line_obj = self.env['account.bank.statement.line']
+        if not payment.move_id:
+            return statement_line_obj, []
+
+        reconcile_account = payment.outstanding_account_id or payment.destination_account_id
+        if not reconcile_account:
+            return statement_line_obj, []
+
+        payment_lines = payment.move_id.line_ids.filtered(
+            lambda l: l.account_id == reconcile_account
+        )
+        if not payment_lines:
+            return statement_line_obj, []
+
+        reconciled_move_lines = self.env['account.move.line']
+        for p_line in payment_lines:
+            # Reconciliaciones parciales
+            partials = self.env['account.partial.reconcile'].search([
+                '|',
+                ('debit_move_id', '=', p_line.id),
+                ('credit_move_id', '=', p_line.id),
+            ])
+            for partial in partials:
+                other_line = partial.credit_move_id if partial.debit_move_id == p_line else partial.debit_move_id
+                reconciled_move_lines |= other_line
+
+            # Reconciliaciones totales
+            if p_line.full_reconcile_id:
+                for other_line in p_line.full_reconcile_id.reconciled_line_ids:
+                    if other_line != p_line:
+                        reconciled_move_lines |= other_line
+
+        if not reconciled_move_lines:
+            return statement_line_obj, []
+
+        statement_lines = statement_line_obj.search([
+            ('move_id', 'in', reconciled_move_lines.move_id.ids),
+        ])
+
+        amounts = [
+            currency.round(abs(st_line.amount))
+            for st_line in statement_lines
+            if currency.round(abs(st_line.amount))
+        ]
+        return statement_lines, amounts
+
     def _find_match_for_payment(self, payment, statement_lines, used_statement_line_ids, currency):
         """Busca una línea de extracto para cada pago POS individual del recibo agrupado.
 
@@ -407,32 +464,39 @@ class PosBankReconcileSession(models.Model):
         # ------------------------------------------------------------------
         # 1. Detectar líneas de extracto ya reconciliadas con este pago
         # ------------------------------------------------------------------
+        # Primero intentamos con el campo nativo; si no está poblado (porque
+        # la conciliación se hizo directamente sobre move.lines), buscamos a
+        # través de las reconciliaciones contables existentes.
         already_reconciled_st_lines = payment.reconciled_statement_line_ids
+        if already_reconciled_st_lines:
+            reconciled_amounts = [
+                currency.round(abs(st_line.amount))
+                for st_line in already_reconciled_st_lines
+                if currency.round(abs(st_line.amount))
+            ]
+        else:
+            already_reconciled_st_lines, reconciled_amounts = self._get_already_reconciled_statement_lines(
+                payment, currency
+            )
+
         amount_already_reconciled = 0.0
         reconciled_line_ids = []
         already_covered_payment_ids = set()
 
-        # Mapeo de montos ya reconciliados para ir consumiéndolos de forma determinística
-        reconciled_amounts = []
-        for st_line in already_reconciled_st_lines:
-            st_amount = currency.round(abs(st_line.amount))
-            if st_amount:
-                reconciled_amounts.append(st_amount)
-            reconciled_line_ids.append(st_line.id)
-
         # Orden determinístico: primero los pagos más antiguos
         sorted_pos_payments = pos_payments.sorted(lambda p: p.id)
+        remaining_amounts = list(reconciled_amounts)
         for pos_payment in sorted_pos_payments:
             pos_amount = currency.round(abs(pos_payment.amount))
-            for idx, rec_amount in enumerate(reconciled_amounts):
+            for idx, rec_amount in enumerate(remaining_amounts):
                 if rec_amount and abs(rec_amount - pos_amount) <= self.tolerance:
                     already_covered_payment_ids.add(pos_payment.id)
                     amount_already_reconciled += pos_amount
-                    reconciled_amounts[idx] = 0.0
+                    remaining_amounts[idx] = 0.0
                     break
 
         amount_already_reconciled = currency.round(amount_already_reconciled)
-        reconciled_line_ids = list(dict.fromkeys(reconciled_line_ids))
+        reconciled_line_ids = list(dict.fromkeys(already_reconciled_st_lines.ids))
 
         # ------------------------------------------------------------------
         # 2. Buscar matches solo para los pagos individuales no cubiertos
@@ -747,6 +811,19 @@ class PosBankReconcileSession(models.Model):
             ))
 
         (st_line_accounts + payment_line_accounts).reconcile()
+
+        # Forzar la relación nativa entre el pago y las líneas de extracto para
+        # que futuras sesiones puedan detectar rápidamente las conciliaciones.
+        try:
+            current_reconciled = payment.reconciled_statement_line_ids
+            new_st_lines = st_lines.filtered(lambda l: l.id not in current_reconciled.ids)
+            if new_st_lines:
+                payment.reconciled_statement_line_ids = [(4, st_line.id) for st_line in new_st_lines]
+        except Exception:
+            _logger.warning(
+                'No se pudo actualizar reconciled_statement_line_ids del pago %s',
+                payment.id, exc_info=True
+            )
 
         line.write({
             'state': 'reconciled',

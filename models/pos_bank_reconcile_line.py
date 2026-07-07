@@ -19,6 +19,9 @@ class PosBankReconcileLine(models.Model):
     )
     statement_line_ids = fields.Many2many(
         comodel_name='account.bank.statement.line',
+        relation='pos_bank_reconcile_line_statement_line_rel',
+        column1='pos_bank_reconcile_line_id',
+        column2='account_bank_statement_line_id',
         string='Líneas de extracto',
     )
     statement_line_count = fields.Integer(
@@ -27,6 +30,9 @@ class PosBankReconcileLine(models.Model):
     )
     reconciled_statement_line_ids = fields.Many2many(
         comodel_name='account.bank.statement.line',
+        relation='pos_bank_reconcile_line_reconciled_statement_line_rel',
+        column1='pos_bank_reconcile_line_id',
+        column2='account_bank_statement_line_id',
         string='Líneas de extracto ya reconciliadas',
     )
     reconciled_statement_line_count = fields.Integer(
