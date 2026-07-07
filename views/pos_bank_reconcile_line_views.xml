@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_pos_bank_reconcile_line_list" model="ir.ui.view">
+        <field name="name">pos.bank.reconcile.line.list</field>
+        <field name="model">pos.bank.reconcile.line</field>
+        <field name="arch" type="xml">
+            <list string="Líneas de conciliación POS" decoration-success="state == 'reconciled'" decoration-info="state == 'matched'">
+                <field name="session_id"/>
+                <field name="payment_id"/>
+                <field name="pos_session_id"/>
+                <field name="pos_payment_method_id"/>
+                <field name="amount_payment"/>
+                <field name="amount_matched"/>
+                <field name="amount_residual"/>
+                <field name="statement_line_count"/>
+                <field name="pos_payment_matched_count"/>
+                <field name="pos_payment_count"/>
+                <field name="missing_amounts"/>
+                <field name="state" widget="badge"/>
+                <field name="notes"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_pos_bank_reconcile_line_form" model="ir.ui.view">
+        <field name="name">pos.bank.reconcile.line.form</field>
+        <field name="model">pos.bank.reconcile.line</field>
+        <field name="arch" type="xml">
+            <form string="Línea de conciliación POS">
+                <header>
+                    <button name="action_recompute_from_matches" string="Recalcular desde matches" type="object" class="btn-primary" invisible="not match_detail_ids"/>
+                    <button name="action_reset_to_auto" string="Volver a matching automático" type="object" class="btn-secondary"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="session_id" readonly="1"/>
+                            <field name="payment_id" readonly="1"/>
+                            <field name="pos_session_id" readonly="1"/>
+                            <field name="pos_payment_method_id" readonly="1"/>
+                            <field name="pos_payment_count" readonly="1"/>
+                            <field name="pos_payment_matched_count" readonly="1"/>
+                            <field name="statement_line_count" readonly="1"/>
+                            <field name="missing_amounts" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="amount_payment" readonly="1"/>
+                            <field name="amount_matched" readonly="1"/>
+                            <field name="amount_residual" readonly="1"/>
+                            <field name="state" readonly="1" widget="badge"/>
+                            <field name="selected" readonly="1"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Pagos POS individuales">
+                            <field name="pos_payment_ids" readonly="1">
+                                <list string="Pagos POS individuales">
+                                    <field name="name"/>
+                                    <field name="payment_date"/>
+                                    <field name="amount"/>
+                                    <field name="payment_method_id"/>
+                                    <field name="pos_order_id"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Pagos POS sin match" invisible="not pos_payment_missing_ids">
+                            <field name="pos_payment_missing_ids" readonly="1">
+                                <list string="Pagos POS sin match">
+                                    <field name="name"/>
+                                    <field name="payment_date"/>
+                                    <field name="amount"/>
+                                    <field name="payment_method_id"/>
+                                    <field name="pos_order_id"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Detalle de matches" invisible="not match_detail_ids">
+                            <field name="match_detail_ids" readonly="0">
+                                <list string="Detalle de matches" editable="bottom">
+                                    <field name="pos_payment_id" readonly="1" options="{'no_open': True}"/>
+                                    <field name="payment_date" readonly="1"/>
+                                    <field name="payment_amount" readonly="1"/>
+                                    <field name="state" readonly="1" widget="badge" decoration-success="state == 'matched'" decoration-warning="state == 'ambiguous'" decoration-danger="state == 'missing'" decoration-info="state == 'manual'"/>
+                                    <field name="candidate_statement_line_ids" widget="many2many_tags" readonly="1" options="{'no_open': True}"/>
+                                    <field name="selected_statement_line_id" options="{'no_open': True}" domain="[('id', 'in', candidate_statement_line_ids)]"/>
+                                    <field name="notes" readonly="1"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Líneas de extracto asignadas">
+                            <field name="statement_line_ids" readonly="1">
+                                <list string="Líneas de extracto">
+                                    <field name="date"/>
+                                    <field name="amount"/>
+                                    <field name="payment_ref"/>
+                                    <field name="ref"/>
+                                    <field name="partner_id"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Notas" invisible="not notes">
+                            <field name="notes" readonly="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_pos_bank_reconcile_line" model="ir.actions.act_window">
+        <field name="name">Líneas de conciliación POS</field>
+        <field name="res_model">pos.bank.reconcile.line</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

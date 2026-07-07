@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_pos_bank_reconcile_session_user,pos.bank.reconcile.session.user,model_pos_bank_reconcile_session,account.group_account_user,1,1,1,0
+access_pos_bank_reconcile_session_manager,pos.bank.reconcile.session.manager,model_pos_bank_reconcile_session,account.group_account_manager,1,1,1,1
+access_pos_bank_reconcile_line_user,pos.bank.reconcile.line.user,model_pos_bank_reconcile_line,account.group_account_user,1,1,1,0
+access_pos_bank_reconcile_line_manager,pos.bank.reconcile.line.manager,model_pos_bank_reconcile_line,account.group_account_manager,1,1,1,1
+access_pos_bank_reconcile_line_match_user,pos.bank.reconcile.line.match.user,model_pos_bank_reconcile_line_match,account.group_account_user,1,1,1,0
+access_pos_bank_reconcile_line_match_manager,pos.bank.reconcile.line.match.manager,model_pos_bank_reconcile_line_match,account.group_account_manager,1,1,1,1

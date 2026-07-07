@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_pos_session_form_inherit_reconcile" model="ir.ui.view">
+        <field name="name">pos.session.form.inherit.reconcile</field>
+        <field name="model">pos.session</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_session_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button name="action_rebuild_pos_payment_links" string="Reconstruir vínculos POS" type="object" invisible="state != 'closed'" confirm="Esto vinculará los pagos POS individuales con los pagos contables agrupados de esta sesión. ¿Continuar?"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="action_rebuild_pos_payment_links_server" model="ir.actions.server">
+        <field name="name">Reconstruir vínculos POS</field>
+        <field name="model_id" ref="point_of_sale.model_pos_session"/>
+        <field name="binding_model_id" ref="point_of_sale.model_pos_session"/>
+        <field name="binding_view_types">list,form</field>
+        <field name="state">code</field>
+        <field name="code">
+            if records:
+                action = records.action_rebuild_pos_payment_links()
+        </field>
+    </record>
+</odoo>

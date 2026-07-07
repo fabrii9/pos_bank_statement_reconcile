@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_pos_bank_reconcile_session_list" model="ir.ui.view">
+        <field name="name">pos.bank.reconcile.session.list</field>
+        <field name="model">pos.bank.reconcile.session</field>
+        <field name="arch" type="xml">
+            <list string="Sesiones de conciliación POS" decoration-success="state == 'done'" decoration-muted="state == 'draft'" decoration-danger="state == 'error'" decoration-info="state == 'preview'">
+                <field name="name"/>
+                <field name="journal_id"/>
+                <field name="date_from"/>
+                <field name="date_to"/>
+                <field name="state" widget="badge" decoration-success="state == 'done'" decoration-muted="state == 'draft'" decoration-danger="state == 'error'" decoration-info="state == 'preview'"/>
+                <field name="matched_count"/>
+                <field name="partial_count"/>
+                <field name="ambiguous_count"/>
+                <field name="unmatched_count"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_pos_bank_reconcile_session_form" model="ir.ui.view">
+        <field name="name">pos.bank.reconcile.session.form</field>
+        <field name="model">pos.bank.reconcile.session</field>
+        <field name="arch" type="xml">
+            <form string="Sesión de conciliación POS">
+                <header>
+                    <button name="action_preview" string="Buscar contrapartes" type="object" class="btn-primary" invisible="state not in ('draft', 'preview')"/>
+                    <button name="action_refresh_preview" string="Actualizar" type="object" class="btn-secondary" invisible="state not in ('draft', 'preview')"/>
+                    <button name="action_confirm" string="Confirmar conciliación" type="object" class="btn-primary" invisible="state != 'preview'"/>
+                    <button name="action_reset_to_draft" string="Volver a borrador" type="object" class="btn-secondary" invisible="state not in ('preview', 'error')"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,preview,done,error"/>
+                </header>
+                <sheet>
+                    <widget name="web_ribbon" title="Hecho" bg_color="text-bg-success" invisible="state != 'done'"/>
+                    <widget name="web_ribbon" title="Borrador" bg_color="text-bg-muted" invisible="state != 'draft'"/>
+                    <widget name="web_ribbon" title="Previsualización" bg_color="text-bg-info" invisible="state != 'preview'"/>
+                    <widget name="web_ribbon" title="Error" bg_color="text-bg-danger" invisible="state != 'error'"/>
+                    <group>
+                        <group>
+                            <field name="name" readonly="1"/>
+                            <field name="journal_id" options="{'no_create': True}" readonly="state in ('done', 'error')"/>
+                            <field name="date_from" readonly="state in ('done', 'error')"/>
+                            <field name="date_to" readonly="state in ('done', 'error')"/>
+                            <field name="filter_payment_by_date" readonly="state in ('done', 'error')"/>
+                            <field name="payment_date_from" invisible="not filter_payment_by_date" readonly="state in ('done', 'error')"/>
+                            <field name="payment_date_to" invisible="not filter_payment_by_date" readonly="state in ('done', 'error')"/>
+                        </group>
+                        <group>
+                            <field name="tolerance" readonly="state in ('done', 'error')"/>
+                            <field name="matched_count"/>
+                            <field name="partial_count"/>
+                            <field name="ambiguous_count"/>
+                            <field name="unmatched_count"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Configuración de matching">
+                            <group>
+                                <field name="use_date_match" readonly="state in ('done', 'error')"/>
+                                <field name="date_tolerance_days" invisible="not use_date_match" readonly="state in ('done', 'error')"/>
+                                <field name="prefer_closest_date" readonly="state in ('done', 'error')"/>
+                                <field name="use_reference_match" readonly="state in ('done', 'error')"/>
+                                <field name="resolve_globally" readonly="state in ('done', 'error')"/>
+                                <field name="auto_resolve_ambiguous" readonly="state in ('done', 'error')"/>
+                            </group>
+                        </page>
+                        <page string="Pagos POS agrupados">
+                            <field name="line_ids" mode="list" readonly="state in ('done', 'error')">
+                                <list string="Pagos POS agrupados" editable="bottom" decoration-success="state == 'matched'" decoration-warning="state == 'partial'" decoration-muted="state == 'unmatched'" decoration-danger="state == 'ambiguous'">
+                                    <field name="selected" widget="boolean_toggle"/>
+                                    <field name="payment_id" readonly="1"/>
+                                    <field name="pos_session_id" readonly="1" options="{'no_open': True}"/>
+                                    <field name="pos_payment_method_id" readonly="1" options="{'no_open': True}"/>
+                                    <field name="amount_payment" readonly="1" optional="show"/>
+                                    <field name="amount_matched" readonly="1" optional="show"/>
+                                    <field name="amount_residual" readonly="1" optional="show"/>
+                                    <field name="statement_line_count" string="Líneas extracto" readonly="1" optional="show"/>
+                                    <field name="pos_payment_matched_count" string="Match" readonly="1" optional="show"/>
+                                    <field name="pos_payment_count" string="Total POS" readonly="1" optional="show"/>
+                                    <field name="pos_payment_missing_ids" string="Faltan" widget="form.many2many_tags" readonly="1" optional="show" options="{'edit_tags': True, 'no_create': True, 'no_quick_create': True, 'no_create_edit': True}"/>
+                                    <field name="missing_amounts" string="Montos faltantes" readonly="1" optional="hide"/>
+                                    <field name="state" readonly="1" widget="badge" decoration-success="state == 'matched'" decoration-warning="state == 'partial'" decoration-muted="state == 'unmatched'" decoration-danger="state == 'ambiguous'" optional="show"/>
+                                    <field name="notes" readonly="1" optional="show"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Notas" invisible="not notes">
+                            <field name="notes"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_pos_bank_reconcile_session" model="ir.actions.act_window">
+        <field name="name">Sesiones de conciliación POS</field>
+        <field name="res_model">pos.bank.reconcile.session</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="action_pos_bank_reconcile_session_new" model="ir.actions.act_window">
+        <field name="name">Nueva conciliación</field>
+        <field name="res_model">pos.bank.reconcile.session</field>
+        <field name="view_mode">form</field>
+        <field name="view_id" ref="view_pos_bank_reconcile_session_form"/>
+        <field name="target">current</field>
+    </record>
+</odoo>

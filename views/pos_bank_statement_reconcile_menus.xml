@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <menuitem
+        id="menu_pos_bank_reconcile_root"
+        name="Conciliación POS"
+        parent="account.menu_finance_entries"
+        sequence="50"/>
+
+    <menuitem
+        id="menu_pos_bank_reconcile_new"
+        name="Nueva conciliación"
+        parent="menu_pos_bank_reconcile_root"
+        action="action_pos_bank_reconcile_session_new"
+        sequence="10"/>
+
+    <menuitem
+        id="menu_pos_bank_reconcile_session"
+        name="Sesiones de conciliación"
+        parent="menu_pos_bank_reconcile_root"
+        action="action_pos_bank_reconcile_session"
+        sequence="20"/>
+
+    <menuitem
+        id="menu_pos_bank_reconcile_line"
+        name="Líneas de conciliación"
+        parent="menu_pos_bank_reconcile_root"
+        action="action_pos_bank_reconcile_line"
+        sequence="30"/>
+</odoo>
