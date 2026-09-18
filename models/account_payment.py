@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from odoo import fields, models
+from odoo import api, fields, models
 
 
 class AccountPayment(models.Model):
@@ -17,6 +17,7 @@ class AccountPayment(models.Model):
         compute='_compute_pos_payment_count',
     )
 
+    @api.depends('pos_payment_ids')
     def _compute_pos_payment_count(self):
         for payment in self:
             payment.pos_payment_count = len(payment.pos_payment_ids)

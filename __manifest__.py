@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Conciliación Bancaria POS',
-    'version': '18.0.1.1.0',
+    'version': '18.0.1.2.0',
     'category': 'Accounting/Accounting',
     'summary': 'Concilia extractos bancarios con pagos POS agrupados por sesión',
     'description': """
@@ -45,6 +45,7 @@ el extracto bancario línea a línea.
         'security/ir.model.access.csv',
         'data/pos_bank_reconcile_sequence.xml',
         'views/pos_session_views.xml',
+        'views/pos_bank_reconcile_search_views.xml',
         'views/pos_bank_reconcile_session_views.xml',
         'views/pos_bank_reconcile_line_views.xml',
         'views/pos_bank_statement_reconcile_menus.xml',

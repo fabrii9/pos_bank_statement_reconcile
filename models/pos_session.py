@@ -8,12 +8,8 @@ class PosSession(models.Model):
     def _create_combine_account_payment(self, payment_method, amounts, diff_amount):
         """Crea el pago agrupado y vincula los pos.payment individuales."""
         res = super()._create_combine_account_payment(payment_method, amounts, diff_amount)
-        # El método padre devuelve un account.move.line; el account.payment
-        # creado se identifica por sesión + método de pago POS.
-        account_payment = self.env['account.payment'].search([
-            ('pos_session_id', '=', self.id),
-            ('pos_payment_method_id', '=', payment_method.id),
-        ], limit=1, order='id desc')
+        # Un solo pago agrupado por sesión/método: no hay ambigüedad posible.
+        account_payment = self._resolve_account_payment(res, payment_method)
         if account_payment:
             pos_payments = self.env['pos.payment'].search([
                 ('session_id', '=', self.id),
@@ -24,16 +20,43 @@ class PosSession(models.Model):
                 pos_payments.write({'account_payment_id': account_payment.id})
         return res
 
+    def _resolve_account_payment(self, res, payment_method, amount=None):
+        """Obtiene el account.payment recién creado por el método nativo.
+
+        El método padre devuelve las líneas contables del pago, así que el
+        camino confiable es subir del move a su payment. La búsqueda por
+        (sesión, método, monto) queda solo como último recurso: con dos pagos
+        del mismo monto en la misma sesión devuelve siempre el mismo registro
+        y dejaría un pos.payment mal vinculado.
+        """
+        account_payment = self.env['account.payment']
+
+        # res suele ser un account.move.line del asiento del pago.
+        if res is not None and hasattr(res, '_name'):
+            if 'payment_id' in res._fields:
+                account_payment = res.payment_id
+            if not account_payment and 'move_id' in res._fields:
+                move = res.move_id
+                if 'payment_id' in move._fields:
+                    account_payment = move.payment_id
+
+        if account_payment:
+            return account_payment[:1]
+
+        domain = [
+            ('pos_session_id', '=', self.id),
+            ('pos_payment_method_id', '=', payment_method.id),
+        ]
+        if amount is not None:
+            domain.append(('amount', '=', abs(amount)))
+        return self.env['account.payment'].search(domain, limit=1, order='id desc')
+
     def _create_split_account_payment(self, payment, amounts):
         """Crea el pago individual y vincula el pos.payment."""
         res = super()._create_split_account_payment(payment, amounts)
-        # El método padre devuelve un account.move.line; buscamos el payment
-        # recién creado por sesión + método + monto.
-        account_payment = self.env['account.payment'].search([
-            ('pos_session_id', '=', self.id),
-            ('pos_payment_method_id', '=', payment.payment_method_id.id),
-            ('amount', '=', abs(amounts['amount'])),
-        ], limit=1, order='id desc')
+        account_payment = self._resolve_account_payment(
+            res, payment.payment_method_id, amounts.get('amount')
+        )
         if account_payment:
             payment.write({'account_payment_id': account_payment.id})
         return res
@@ -65,17 +88,18 @@ class PosSession(models.Model):
                     continue
 
                 if method.split_transactions:
-                    # Método split: intentar emparejar por monto.
-                    payment_amount = currency_rounded = payment.currency_id.round(abs(payment.amount))
+                    # Método split: un account.payment por cada pos.payment.
+                    # Emparejamos por monto, pero solo sobre los pos.payment que
+                    # todavía no tienen vínculo, para no pisar uno ya asignado
+                    # cuando hay varios pagos del mismo importe en la sesión.
+                    payment_amount = payment.currency_id.round(abs(payment.amount))
                     candidates = pos_payments.filtered(
-                        lambda p: abs(payment.currency_id.round(abs(p.amount)) - payment_amount) < 0.01
+                        lambda p: not p.account_payment_id
+                        and abs(payment.currency_id.round(abs(p.amount)) - payment_amount) < 0.01
                     )
                     if candidates:
-                        # En caso de múltiples candidatos con el mismo monto, tomar solo uno.
-                        candidate = candidates[0]
-                        if not candidate.account_payment_id:
-                            candidate.write({'account_payment_id': payment.id})
-                            linked_count += 1
+                        candidates[0].write({'account_payment_id': payment.id})
+                        linked_count += 1
                 else:
                     # Método combinado: todos los pos.payment del método pertenecen a este recibo.
                     to_link = pos_payments.filtered(lambda p: not p.account_payment_id)

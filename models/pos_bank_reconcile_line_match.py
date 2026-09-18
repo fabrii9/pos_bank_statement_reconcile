@@ -28,10 +28,14 @@ class PosBankReconcileLineMatch(models.Model):
         comodel_name='pos.order',
         related='pos_payment_id.pos_order_id',
         string='Pedido POS',
+        store=True,
+        readonly=True,
     )
     payment_date = fields.Datetime(
         related='pos_payment_id.payment_date',
         string='Fecha pago',
+        store=True,
+        readonly=True,
     )
     payment_amount = fields.Monetary(
         string='Monto pago',
