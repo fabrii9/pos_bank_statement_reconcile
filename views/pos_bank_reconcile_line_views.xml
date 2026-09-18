@@ -4,7 +4,7 @@
         <field name="name">pos.bank.reconcile.line.list</field>
         <field name="model">pos.bank.reconcile.line</field>
         <field name="arch" type="xml">
-            <list string="Líneas de conciliación POS" decoration-success="state == 'reconciled'" decoration-info="state == 'matched'">
+            <list string="Líneas de conciliación POS" decoration-muted="state == 'reconciled'" decoration-success="state == 'matched'" decoration-warning="state in ['partial', 'ambiguous']" decoration-danger="state == 'unmatched'">
                 <field name="session_id"/>
                 <field name="payment_id"/>
                 <field name="pos_session_id"/>
@@ -18,7 +18,7 @@
                 <field name="pos_payment_count"/>
                 <field name="missing_amounts"/>
                 <field name="state" widget="badge"/>
-                <field name="notes"/>
+                <field name="notes" optional="hide"/>
             </list>
         </field>
     </record>
@@ -124,5 +124,17 @@
         <field name="name">Líneas de conciliación POS</field>
         <field name="res_model">pos.bank.reconcile.line</field>
         <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_pos_bank_reconcile_line_search"/>
+        <field name="context">{'search_default_g_state': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Todavía no hay líneas de conciliación
+            </p>
+            <p>
+                Las líneas se generan al buscar contrapartes desde una sesión de
+                conciliación POS. Cada línea representa un recibo agrupado y las
+                líneas de extracto que lo componen.
+            </p>
+        </field>
     </record>
 </odoo>

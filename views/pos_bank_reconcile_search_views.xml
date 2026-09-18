@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="view_pos_bank_reconcile_session_search" model="ir.ui.view">
+        <field name="name">pos.bank.reconcile.session.search</field>
+        <field name="model">pos.bank.reconcile.session</field>
+        <field name="arch" type="xml">
+            <search string="Sesiones de conciliación POS">
+                <field name="name" string="Sesión"/>
+                <field name="journal_id"/>
+
+                <filter name="f_draft" string="Borrador" domain="[('state', '=', 'draft')]"/>
+                <filter name="f_preview" string="Previsualización" domain="[('state', '=', 'preview')]"/>
+                <filter name="f_done" string="Confirmadas" domain="[('state', '=', 'done')]"/>
+                <filter name="f_error" string="Con errores" domain="[('state', '=', 'error')]"/>
+                <separator/>
+                <filter name="f_open" string="Sin confirmar"
+                        domain="[('state', 'in', ['draft', 'preview', 'error'])]"/>
+                <separator/>
+                <filter name="f_pending_work" string="Requieren revisión"
+                        domain="[('state', '!=', 'done'),
+                                 ('line_ids.state', 'in', ['partial', 'ambiguous', 'unmatched'])]"/>
+
+                <group expand="0" string="Agrupar por">
+                    <filter name="g_journal" string="Diario bancario" context="{'group_by': 'journal_id'}"/>
+                    <filter name="g_state" string="Estado" context="{'group_by': 'state'}"/>
+                    <filter name="g_date_from" string="Desde (mes)" context="{'group_by': 'date_from'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_pos_bank_reconcile_line_search" model="ir.ui.view">
+        <field name="name">pos.bank.reconcile.line.search</field>
+        <field name="model">pos.bank.reconcile.line</field>
+        <field name="arch" type="xml">
+            <search string="Líneas de conciliación POS">
+                <field name="payment_id" string="Recibo agrupado"/>
+                <field name="session_id" string="Sesión de conciliación"/>
+                <field name="pos_session_id" string="Sesión POS"/>
+                <field name="pos_payment_method_id" string="Método de pago POS"/>
+                <field name="notes"/>
+
+                <filter name="f_matched" string="Con contraparte" domain="[('state', '=', 'matched')]"/>
+                <filter name="f_partial" string="Parciales" domain="[('state', '=', 'partial')]"/>
+                <filter name="f_ambiguous" string="Ambiguas" domain="[('state', '=', 'ambiguous')]"/>
+                <filter name="f_unmatched" string="Sin match" domain="[('state', '=', 'unmatched')]"/>
+                <filter name="f_reconciled" string="Conciliadas" domain="[('state', '=', 'reconciled')]"/>
+                <separator/>
+                <filter name="f_pending" string="Pendientes de acción"
+                        domain="[('state', 'in', ['partial', 'ambiguous', 'unmatched'])]"/>
+                <filter name="f_selected" string="Marcadas para conciliar"
+                        domain="[('selected', '=', True), ('state', '=', 'matched')]"/>
+                <separator/>
+                <filter name="f_with_residual" string="Con diferencia"
+                        domain="[('amount_residual', '!=', 0)]"/>
+                <filter name="f_no_pos_payments" string="Sin pagos POS vinculados"
+                        domain="[('pos_payment_ids', '=', False)]"/>
+
+                <group expand="0" string="Agrupar por">
+                    <filter name="g_state" string="Estado" context="{'group_by': 'state'}"/>
+                    <filter name="g_method" string="Método de pago POS" context="{'group_by': 'pos_payment_method_id'}"/>
+                    <filter name="g_session" string="Sesión de conciliación" context="{'group_by': 'session_id'}"/>
+                    <filter name="g_pos_session" string="Sesión POS" context="{'group_by': 'pos_session_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_pos_bank_reconcile_line_match_search" model="ir.ui.view">
+        <field name="name">pos.bank.reconcile.line.match.search</field>
+        <field name="model">pos.bank.reconcile.line.match</field>
+        <field name="arch" type="xml">
+            <search string="Detalle de matches">
+                <field name="pos_payment_id"/>
+                <field name="pos_order_id"/>
+                <field name="line_id"/>
+                <field name="session_id"/>
+
+                <filter name="f_matched" string="Emparejados" domain="[('state', '=', 'matched')]"/>
+                <filter name="f_manual" string="Manuales" domain="[('state', '=', 'manual')]"/>
+                <filter name="f_ambiguous" string="Ambiguos" domain="[('state', '=', 'ambiguous')]"/>
+                <filter name="f_missing" string="Sin match" domain="[('state', '=', 'missing')]"/>
+                <filter name="f_already" string="Ya conciliados" domain="[('state', '=', 'already_reconciled')]"/>
+                <separator/>
+                <filter name="f_needs_decision" string="Requieren decisión"
+                        domain="[('state', 'in', ['ambiguous', 'missing'])]"/>
+
+                <group expand="0" string="Agrupar por">
+                    <filter name="g_state" string="Estado" context="{'group_by': 'state'}"/>
+                    <filter name="g_line" string="Línea de conciliación" context="{'group_by': 'line_id'}"/>
+                    <filter name="g_session" string="Sesión de conciliación" context="{'group_by': 'session_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+</odoo>

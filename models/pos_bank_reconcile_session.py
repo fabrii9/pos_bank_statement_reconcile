@@ -194,6 +194,13 @@ class PosBankReconcileSession(models.Model):
         if self.state not in ('draft', 'preview'):
             raise UserError(_('Solo se pueden buscar contrapartes en sesiones en borrador o previsualización.'))
 
+        if self.line_ids.filtered(lambda l: l.state == 'reconciled'):
+            raise UserError(_(
+                'Esta sesión ya tiene líneas conciliadas contablemente. '
+                'Volver a buscar contrapartes borraría esa trazabilidad. '
+                'Creá una sesión nueva para el saldo pendiente.'
+            ))
+
         self.line_ids.unlink()
 
         payment_domain = [
@@ -325,13 +332,16 @@ class PosBankReconcileSession(models.Model):
     def _resolve_assignment(self, pos_payments, available, currency):
         """Resuelve la asignación de líneas de extracto a pagos POS individuales.
 
-        Devuelve un diccionario {pos_payment_id: statement_line_id} con las asignaciones
-        definitivas, o False si no puede resolver completamente.
+        Devuelve un diccionario {pos_payment_id: statement_line_id}. El diccionario
+        puede ser parcial: los pagos que no pudieron resolverse simplemente no
+        aparecen como clave, y el llamador los marca como ambiguos o sin match.
+
+        Una misma línea de extracto nunca se asigna a dos pagos distintos.
         """
         assignments = {}
         used_ids = set()
 
-        # Primero asignar los pagos con un solo candidato
+        # Primero asignar los pagos con un solo candidato libre.
         pending = []
         for pos_payment in pos_payments:
             candidates = self._get_candidates_for_pos_payment(pos_payment, available, currency)
@@ -340,30 +350,36 @@ class PosBankReconcileSession(models.Model):
                 line = free_candidates[0]
                 assignments[pos_payment.id] = line.id
                 used_ids.add(line.id)
-            elif not free_candidates:
-                if len(candidates) == 1:
-                    # El único candidato ya fue usado por otro pago
-                    pass
-                pending.append((pos_payment, candidates, False))
-            else:
+            elif free_candidates:
                 pending.append((pos_payment, candidates, True))
+            else:
+                # Sin candidatos libres: o no hay ninguno, o todos fueron
+                # tomados por otro pago individual del mismo recibo.
+                pending.append((pos_payment, candidates, False))
 
-        # Si no hay ambigüedades pendientes, devolvemos lo que tenemos
-        if not any(has_amb for _, _, has_amb in pending):
+        # Si no quedó ninguna ambigüedad por resolver, devolvemos lo que tenemos.
+        if not any(has_ambiguity for _dummy, _dummy2, has_ambiguity in pending):
             return assignments
 
         if not self.resolve_globally:
             return assignments
 
-        # Resolución simple: asignar por cercanía de fecha sin repetir
-        pending_sorted = sorted(
-            pending,
-            key=lambda item: min(
-                abs((c.date - item[0].payment_date.date()).days)
-                for c in item[1] if c.id not in used_ids
-            ) if item[1] else 9999
-        )
-        for pos_payment, candidates, _ in pending_sorted:
+        # Resolución greedy: los pagos con menos alternativas se asignan primero
+        # y, a igualdad, el que tenga la contraparte de fecha más cercana.
+        # Nunca se reutiliza una línea ya asignada.
+        def _sort_key(item):
+            pos_payment, candidates, _has_ambiguity = item
+            free = [c for c in candidates if c.id not in used_ids]
+            if not free:
+                # Sin alternativas libres: al final, no hay nada que decidir.
+                return (9999, 9999)
+            distance = 9999
+            if pos_payment.payment_date:
+                payment_date = pos_payment.payment_date.date()
+                distance = min(abs((c.date - payment_date).days) for c in free)
+            return (len(free), distance)
+
+        for pos_payment, candidates, _has_ambiguity in sorted(pending, key=_sort_key):
             free_candidates = candidates.filtered(lambda l: l.id not in used_ids)
             if free_candidates:
                 line = free_candidates[0]
@@ -673,8 +689,12 @@ class PosBankReconcileSession(models.Model):
 
             errors = []
             for line in selected_lines:
+                # Cada línea se concilia dentro de su propio savepoint: si una
+                # falla con un error de base de datos, el cursor se restaura y
+                # las conciliaciones ya hechas en este mismo confirm se mantienen.
                 try:
-                    session._reconcile_line(line)
+                    with self.env.cr.savepoint():
+                        session._reconcile_line(line)
                 except Exception as e:
                     payment_ref = line.payment_id.display_name or line.payment_id.id
                     errors.append(_('Pago %s: %s') % (payment_ref, str(e)))
@@ -828,13 +848,22 @@ class PosBankReconcileSession(models.Model):
         self.ensure_one()
         if self.state not in ('draft', 'preview'):
             raise UserError(_('Solo se puede actualizar en borrador o previsualización.'))
-        self.line_ids.unlink()
         return self.action_preview()
 
     def action_reset_to_draft(self):
         for session in self:
             if session.state == 'done':
                 raise UserError(_('No se puede volver a borrador una sesión ya confirmada.'))
+            # Una sesión en error puede tener líneas que SÍ se conciliaron
+            # contablemente. Borrarlas perdería la trazabilidad de asientos
+            # que siguen existiendo en la contabilidad.
+            reconciled_lines = session.line_ids.filtered(lambda l: l.state == 'reconciled')
+            if reconciled_lines:
+                raise UserError(_(
+                    'Esta sesión tiene %s línea(s) ya conciliadas contablemente. '
+                    'No se puede volver a borrador sin perder la trazabilidad de esos asientos. '
+                    'Creá una sesión nueva para conciliar lo que quedó pendiente.'
+                ) % len(reconciled_lines))
             session.line_ids.unlink()
             session.write({'state': 'draft', 'notes': False})
         return True

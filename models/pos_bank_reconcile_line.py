@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from odoo import api, fields, models, _
+from odoo.exceptions import UserError
 
 
 class PosBankReconcileLine(models.Model):
@@ -124,6 +125,13 @@ class PosBankReconcileLine(models.Model):
         readonly=True,
     )
 
+    @api.depends(
+        'pos_payment_ids',
+        'statement_line_ids',
+        'reconciled_statement_line_ids',
+        'match_detail_ids.state',
+        'match_detail_ids.pos_payment_id',
+    )
     def _compute_counts(self):
         for line in self:
             line.pos_payment_count = len(line.pos_payment_ids)
@@ -228,26 +236,63 @@ class PosBankReconcileLine(models.Model):
         return True
 
     def action_reset_to_auto(self):
-        """Vuelve a ejecutar el matching automático para esta línea."""
+        """Vuelve a ejecutar el matching automático para esta línea.
+
+        Respeta las líneas de extracto que ya están asignadas a las demás
+        líneas de la misma sesión, para no proponer una contraparte que otro
+        recibo ya tiene tomada.
+        """
         for line in self:
+            if line.state == 'reconciled':
+                raise UserError(_(
+                    'La línea del recibo %s ya fue conciliada contablemente. '
+                    'No se puede volver a buscar contrapartes.'
+                ) % (line.payment_id.display_name or ''))
+
+            session = line.session_id
             line.match_detail_ids.unlink()
-            result = line.session_id._find_match_for_payment(
+
+            # Líneas de extracto tomadas por el resto de la sesión.
+            other_lines = session.line_ids - line
+            used_statement_line_ids = set(
+                other_lines.mapped('statement_line_ids').ids
+            ) | set(
+                other_lines.mapped('reconciled_statement_line_ids').ids
+            )
+
+            statement_lines = line.env['account.bank.statement.line'].search([
+                ('journal_id', '=', session.journal_id.id),
+                ('is_reconciled', '=', False),
+                ('date', '>=', session.date_from),
+                ('date', '<=', session.date_to),
+            ], order='date, amount')
+
+            result = session._find_match_for_payment(
                 line.payment_id,
-                line.env['account.bank.statement.line'].search([
-                    ('journal_id', '=', line.session_id.journal_id.id),
-                    ('is_reconciled', '=', False),
-                    ('date', '>=', line.session_id.date_from),
-                    ('date', '<=', line.session_id.date_to),
-                ]),
-                set(),
+                statement_lines,
+                used_statement_line_ids,
                 line.currency_id,
             )
+
+            match_detail_vals = [
+                (0, 0, {
+                    'pos_payment_id': md['pos_payment_id'],
+                    'selected_statement_line_id': md.get('selected_statement_line_id'),
+                    'candidate_statement_line_ids': [(6, 0, md.get('candidate_statement_line_ids', []))],
+                    'state': md['state'],
+                    'notes': md.get('notes', ''),
+                })
+                for md in result.get('match_details', [])
+            ]
+
             line.write({
+                'selected': result['selected'],
                 'statement_line_ids': [(6, 0, result['statement_line_ids'])],
                 'reconciled_statement_line_ids': [(6, 0, result['reconciled_statement_line_ids'])],
                 'amount_matched': result['amount_matched'],
                 'amount_residual': result['amount_residual'],
                 'state': result['state'],
                 'notes': result['notes'],
+                'match_detail_ids': match_detail_vals,
             })
         return True
