@@ -49,11 +49,11 @@ pos_bank_statement_reconcile/
 │   ├── account_payment.py      # campo pos_payment_ids en account.payment
 │   ├── pos_session.py          # vinculación al cerrar sesión
 │   ├── pos_bank_reconcile_session.py
-│   └── pos_bank_reconcile_line.py
-├── wizards/
-│   ├── pos_bank_reconcile_wizard.py
-│   └── pos_bank_reconcile_wizard_views.xml
+│   ├── pos_bank_reconcile_line.py
+│   └── pos_bank_reconcile_line_match.py
 ├── views/
+│   ├── pos_session_views.xml
+│   ├── pos_bank_reconcile_search_views.xml
 │   ├── pos_bank_reconcile_session_views.xml
 │   ├── pos_bank_reconcile_line_views.xml
 │   └── pos_bank_statement_reconcile_menus.xml
@@ -63,8 +63,22 @@ pos_bank_statement_reconcile/
     └── es.po
 ```
 
+## Filtros disponibles
+
+Tanto **Sesiones de conciliación** como **Líneas de conciliación** tienen filtros y
+agrupaciones. Los más útiles en el día a día:
+
+- **Pendientes de acción**: todas las líneas `partial`, `ambiguous` o `unmatched`.
+- **Sin pagos POS vinculados**: recibos que necesitan *Reconstruir vínculos POS*.
+- **Agrupar por método de pago POS**: para ver de un vistazo qué billetera concilia bien.
+
 ## Notas
 
 - El módulo no modifica el cierre POS nativo: sigue generando un recibo agrupado por sesión/método.
+- El emparejamiento es por **monto bruto**: asume que la billetera acredita el importe
+  completo de la venta y que comisiones, retenciones e impuestos se registran por separado.
+  Si el procesador liquida neto de comisión, ninguna línea va a coincidir.
 - Los reembolsos y montos negativos quedarán como `unmatched` hasta una futura mejora.
+- Una sesión con líneas ya conciliadas contablemente no se puede volver a borrador ni
+  re-previsualizar: hay que crear una sesión nueva para el saldo pendiente.
 - Se recomienda probar en un entorno de testing antes de usar en producción.
